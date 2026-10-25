@@ -1,8 +1,8 @@
 
 import UIKit
-
+import GitHubNetworking
 final class SearchViewController: UIViewController {
-
+    private let apiClient = GitHubAPIClient()
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.text = "GitHub Followers"
@@ -88,10 +88,11 @@ final class SearchViewController: UIViewController {
         ])
     }
 
+   
     @objc private func searchButtonTapped() {
         guard let username = usernameTextField.text?
             .trimmingCharacters(in: .whitespacesAndNewlines),
-              !username.isEmpty else {
+            !username.isEmpty else {
             showAlert(
                 title: "Username Required",
                 message: "Please enter a GitHub username."
@@ -99,7 +100,36 @@ final class SearchViewController: UIViewController {
             return
         }
 
-        print("Search requested for: \(username)")
+        searchButton.isEnabled = false
+        searchButton.configuration?.title = "Searching..."
+
+        Task {
+            defer {
+                searchButton.isEnabled = true
+                searchButton.configuration?.title = "Get Followers"
+            }
+
+            do {
+                let user = try await apiClient.fetchUser(
+                    username: username
+                )
+
+                showAlert(
+                    title: "User Found",
+                    message: "Found GitHub user: \(user.login)"
+                )
+            } catch let error as GitHubAPIError {
+                showAlert(
+                    title: "Search Failed",
+                    message: error.localizedDescription
+                )
+            } catch {
+                showAlert(
+                    title: "Search Failed",
+                    message: "Something went wrong. Please try again."
+                )
+            }
+        }
     }
 
     private func showAlert(title: String, message: String) {

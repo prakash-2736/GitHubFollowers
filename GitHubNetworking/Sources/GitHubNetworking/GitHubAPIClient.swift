@@ -28,7 +28,7 @@ public enum GitHubAPIError: Error, LocalizedError {
 }
 
 public struct GitHubAPIClient {
-
+    public init() {}
     // MARK: - Fetch User
 
     public func fetchUser(username: String) async throws -> GitHubUser {
