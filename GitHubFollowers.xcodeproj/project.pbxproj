@@ -6,6 +6,10 @@
 	objectVersion = 110;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		F5F8C79C308E643A0032959E /* GitHubNetworking in Frameworks */ = {isa = PBXBuildFile; productRef = F5F8C79B308E643A0032959E /* GitHubNetworking */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		F5959F993087A76400E2F12A /* GitHubFollowers.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GitHubFollowers.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -22,6 +26,7 @@
 		F5959F963087A76400E2F12A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				F5F8C79C308E643A0032959E /* GitHubNetworking in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -60,6 +65,9 @@
 				F5959F9B3087A76400E2F12A /* GitHubFollowers */,
 			);
 			name = GitHubFollowers;
+			packageProductDependencies = (
+				F5F8C79B308E643A0032959E /* GitHubNetworking */,
+			);
 			productName = GitHubFollowers;
 			productReference = F5959F993087A76400E2F12A /* GitHubFollowers.app */;
 			productType = "com.apple.product-type.application";
@@ -88,6 +96,9 @@
 			);
 			mainGroup = F5959F903087A76400E2F12A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F5F8C79A308E643A0032959E /* XCLocalSwiftPackageReference "GitHubNetworking" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F5959F9A3087A76400E2F12A /* Products */;
 			projectDirPath = "";
@@ -339,6 +350,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F5F8C79A308E643A0032959E /* XCLocalSwiftPackageReference "GitHubNetworking" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = GitHubNetworking;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F5F8C79B308E643A0032959E /* GitHubNetworking */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GitHubNetworking;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F5959F913087A76400E2F12A /* Project object */;
 	validationLevel = 1;
