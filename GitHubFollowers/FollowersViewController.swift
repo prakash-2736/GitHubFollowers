@@ -22,6 +22,11 @@ final class FollowersViewController: UIViewController {
     private var hasMoreFollowers = true
     private let perPage = 50
 
+    // Loading and empty states
+    private let statusView = UIView()
+    private let statusLabel = UILabel()
+    private let activityIndicator = UIActivityIndicatorView(style: .large)
+
     init(username: String) {
         self.username = username
         super.init(nibName: nil, bundle: nil)
@@ -40,6 +45,7 @@ final class FollowersViewController: UIViewController {
         configureCollectionView()
         configureDataSource()
         configureSearchController()
+        configureStatusView()
         fetchFollowers()
     }
 
@@ -116,12 +122,55 @@ final class FollowersViewController: UIViewController {
         definesPresentationContext = true
     }
 
+    private func configureStatusView() {
+        statusLabel.textAlignment = .center
+        statusLabel.textColor = .secondaryLabel
+        statusLabel.numberOfLines = 0
+        statusLabel.isHidden = true
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+
+        statusView.addSubview(statusLabel)
+        statusView.addSubview(activityIndicator)
+
+        NSLayoutConstraint.activate([
+            statusLabel.centerXAnchor.constraint(
+                equalTo: statusView.centerXAnchor
+            ),
+            statusLabel.centerYAnchor.constraint(
+                equalTo: statusView.centerYAnchor
+            ),
+            statusLabel.leadingAnchor.constraint(
+                greaterThanOrEqualTo: statusView.leadingAnchor,
+                constant: 24
+            ),
+            statusLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: statusView.trailingAnchor,
+                constant: -24
+            ),
+            activityIndicator.centerXAnchor.constraint(
+                equalTo: statusView.centerXAnchor
+            ),
+            activityIndicator.centerYAnchor.constraint(
+                equalTo: statusView.centerYAnchor
+            )
+        ])
+
+        collectionView.backgroundView = statusView
+    }
+
     // MARK: - Pagination
 
     private func fetchFollowers() {
         guard !isLoading, hasMoreFollowers else { return }
 
         isLoading = true
+
+        if followers.isEmpty {
+            statusLabel.isHidden = true
+            activityIndicator.startAnimating()
+        }
 
         Task {
             do {
@@ -142,12 +191,16 @@ final class FollowersViewController: UIViewController {
 
                     currentPage += 1
                     isLoading = false
+                    activityIndicator.stopAnimating()
 
                     updateFilteredLogins()
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
+                    activityIndicator.stopAnimating()
+                    updateFilteredLogins()
+
                     showError(message: error.localizedDescription)
                 }
             }
@@ -170,7 +223,28 @@ final class FollowersViewController: UIViewController {
             }
         }
 
+        updateEmptyState(searchText: searchText)
         applySnapshot(for: filteredLogins)
+    }
+
+    private func updateEmptyState(searchText: String) {
+        if isLoading && followers.isEmpty {
+            statusLabel.isHidden = true
+            activityIndicator.startAnimating()
+            return
+        }
+
+        activityIndicator.stopAnimating()
+
+        if !filteredLogins.isEmpty {
+            statusLabel.isHidden = true
+        } else {
+            statusLabel.text = searchText.isEmpty
+                ? "This user doesn't have any followers yet."
+                : "No followers found for \"\(searchText)\"."
+
+            statusLabel.isHidden = false
+        }
     }
 
     private func applySnapshot(for logins: [String]) {

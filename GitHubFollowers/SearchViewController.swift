@@ -1,10 +1,12 @@
 
 import UIKit
 import GitHubNetworking
+import SwiftUI
 
 final class SearchViewController: UIViewController,
     UITextFieldDelegate,
     UIGestureRecognizerDelegate {
+
     private let apiClient = GitHubAPIClient()
 
     private let titleLabel: UILabel = {
@@ -171,14 +173,26 @@ final class SearchViewController: UIViewController,
             }
 
             do {
-                let user = try await apiClient.fetchUser(username: username)
+                let user = try await apiClient.fetchUser(
+                    username: username
+                )
 
-                let followersVC = FollowersViewController(
-                    username: user.login
+                let profileView = UserProfileView(
+                    username: user.login,
+                    onGetFollowers: { [weak self] login in
+                        self?.navigationController?.pushViewController(
+                            FollowersViewController(username: login),
+                            animated: true
+                        )
+                    }
+                )
+
+                let hostingController = UIHostingController(
+                    rootView: profileView
                 )
 
                 navigationController?.pushViewController(
-                    followersVC,
+                    hostingController,
                     animated: true
                 )
             } catch let error as GitHubAPIError {
@@ -215,7 +229,6 @@ final class SearchViewController: UIViewController,
     ) -> Bool {
         guard let touchedView = touch.view else { return true }
 
-        // Don't let the outside-tap gesture intercept button taps.
         if touchedView is UIButton {
             return false
         }

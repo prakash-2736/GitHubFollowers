@@ -14,6 +14,8 @@ final class FollowerCell: UICollectionViewCell {
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 35
         imageView.backgroundColor = .secondarySystemBackground
+        imageView.image = UIImage(systemName: "person.crop.circle.fill")
+        imageView.tintColor = .secondaryLabel
         imageView.translatesAutoresizingMaskIntoConstraints = false
         return imageView
     }()
@@ -44,7 +46,9 @@ final class FollowerCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         usernameLabel.text = nil
-        avatarImageView.image = nil
+        avatarImageView.image = UIImage(
+            systemName: "person.crop.circle.fill"
+        )
         representedAvatarURL = nil
     }
 
@@ -82,7 +86,12 @@ final class FollowerCell: UICollectionViewCell {
 
     func configure(with follower: GitHubUser) {
         usernameLabel.text = follower.login
-        avatarImageView.image = nil
+
+        let fallbackImage = UIImage(
+            systemName: "person.crop.circle.fill"
+        )
+
+        avatarImageView.image = fallbackImage
         representedAvatarURL = follower.avatarURL
 
         let cacheKey = follower.avatarURL.absoluteString as NSString
@@ -112,7 +121,7 @@ final class FollowerCell: UICollectionViewCell {
                     self.avatarImageView.image = image
                 }
             } catch {
-                // Keep the placeholder background if loading fails.
+                // Keep the fallback person icon.
             }
         }
     }
