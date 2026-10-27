@@ -52,6 +52,17 @@ final class SearchViewController: UIViewController,
         return button
     }()
 
+    private let favouritesButton: UIButton = {
+        var configuration = UIButton.Configuration.bordered()
+        configuration.title = "View Favourites"
+        configuration.image = UIImage(systemName: "heart.fill")
+        configuration.imagePadding = 8
+
+        let button = UIButton(configuration: configuration)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
     private let keyboardToolbar = UIToolbar()
 
     override func viewDidLoad() {
@@ -67,6 +78,12 @@ final class SearchViewController: UIViewController,
             action: #selector(searchButtonTapped),
             for: .touchUpInside
         )
+
+        favouritesButton.addTarget(
+            self,
+            action: #selector(favouritesButtonTapped),
+            for: .touchUpInside
+        )
     }
 
     private func setupLayout() {
@@ -75,7 +92,8 @@ final class SearchViewController: UIViewController,
                 titleLabel,
                 subtitleLabel,
                 usernameTextField,
-                searchButton
+                searchButton,
+                favouritesButton
             ]
         )
 
@@ -106,7 +124,8 @@ final class SearchViewController: UIViewController,
                 constant: -20
             ),
             usernameTextField.heightAnchor.constraint(equalToConstant: 48),
-            searchButton.heightAnchor.constraint(equalToConstant: 50)
+            searchButton.heightAnchor.constraint(equalToConstant: 50),
+            favouritesButton.heightAnchor.constraint(equalToConstant: 48)
         ])
     }
 
@@ -146,6 +165,15 @@ final class SearchViewController: UIViewController,
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         searchButtonTapped()
         return true
+    }
+
+    @objc private func favouritesButtonTapped() {
+        view.endEditing(true)
+
+        navigationController?.pushViewController(
+            FavouritesViewController(),
+            animated: true
+        )
     }
 
     @objc private func searchButtonTapped() {

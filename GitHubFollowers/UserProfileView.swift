@@ -5,6 +5,7 @@ import GitHubNetworking
 struct UserProfileView: View {
 
     @StateObject private var viewModel = UserProfileViewModel()
+    @State private var isFavourite = false
 
     let username: String
     let onGetFollowers: (String) -> Void
@@ -29,6 +30,11 @@ struct UserProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await viewModel.loadUser(username: username)
+
+            if let user = viewModel.user {
+                isFavourite = FavouritesManager.shared
+                    .isFavourite(id: user.id)
+            }
         }
         .alert(
             "Unable to Load Profile",
@@ -101,6 +107,22 @@ struct UserProfileView: View {
                     )
                 }
 
+                Button {
+                    if isFavourite {
+                        FavouritesManager.shared.removeFavourite(id: user.id)
+                    } else {
+                        FavouritesManager.shared.addFavourite(user)
+                    }
+
+                    isFavourite.toggle()
+                } label: {
+                    Label(
+                        isFavourite ? "Remove Favourite" : "Add to Favourites",
+                        systemImage: isFavourite ? "heart.fill" : "heart"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .tint(isFavourite ? .red : .accentColor)
 
                 Button("Get Followers") {
                     onGetFollowers(user.login)
@@ -110,10 +132,12 @@ struct UserProfileView: View {
                 NavigationLink {
                     RepositoryView(username: user.login)
                 } label: {
-                    Label("Get Repositories", systemImage: "book.closed")
+                    Label(
+                        "Get Repositories",
+                        systemImage: "book.closed"
+                    )
                 }
                 .buttonStyle(.bordered)
-
             }
             .frame(maxWidth: .infinity)
             .padding()
