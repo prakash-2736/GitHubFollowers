@@ -11,9 +11,7 @@ final class FollowersViewController: UIViewController {
     private var followers: [String: GitHubUser] = [:]
     private var filteredLogins: [String] = []
 
-    private var dataSource:
-        UICollectionViewDiffableDataSource<Int, String>!
-
+    private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
     private var searchController: UISearchController!
 
     // Pagination
@@ -40,7 +38,7 @@ final class FollowersViewController: UIViewController {
         super.viewDidLoad()
 
         title = "\(username)'s Followers"
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = AppTheme.background
 
         configureCollectionView()
         configureDataSource()
@@ -48,6 +46,8 @@ final class FollowersViewController: UIViewController {
         configureStatusView()
         fetchFollowers()
     }
+
+    // MARK: - Collection View
 
     private func configureCollectionView() {
         let layout = UICollectionViewFlowLayout()
@@ -65,7 +65,7 @@ final class FollowersViewController: UIViewController {
             collectionViewLayout: layout
         )
 
-        collectionView.backgroundColor = .systemBackground
+        collectionView.backgroundColor = AppTheme.background
         collectionView.translatesAutoresizingMaskIntoConstraints = false
 
         collectionView.register(
@@ -92,6 +92,8 @@ final class FollowersViewController: UIViewController {
         ])
     }
 
+    // MARK: - Data Source
+
     private func configureDataSource() {
         dataSource = UICollectionViewDiffableDataSource<Int, String>(
             collectionView: collectionView
@@ -100,8 +102,8 @@ final class FollowersViewController: UIViewController {
             guard let self,
                   let follower = self.followers[login],
                   let cell = collectionView.dequeueReusableCell(
-                      withReuseIdentifier: FollowerCell.reuseIdentifier,
-                      for: indexPath
+                    withReuseIdentifier: FollowerCell.reuseIdentifier,
+                    for: indexPath
                   ) as? FollowerCell else {
                 return UICollectionViewCell()
             }
@@ -110,6 +112,8 @@ final class FollowersViewController: UIViewController {
             return cell
         }
     }
+
+    // MARK: - Search
 
     private func configureSearchController() {
         searchController = UISearchController(searchResultsController: nil)
@@ -122,15 +126,19 @@ final class FollowersViewController: UIViewController {
         definesPresentationContext = true
     }
 
+    // MARK: - Loading and Empty States
+
     private func configureStatusView() {
         statusLabel.textAlignment = .center
-        statusLabel.textColor = .secondaryLabel
+        statusLabel.textColor = AppTheme.secondaryText
         statusLabel.numberOfLines = 0
         statusLabel.isHidden = true
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        activityIndicator.color = AppTheme.accent
         activityIndicator.translatesAutoresizingMaskIntoConstraints = false
 
+        statusView.backgroundColor = AppTheme.background
         statusView.addSubview(statusLabel)
         statusView.addSubview(activityIndicator)
 
@@ -200,12 +208,13 @@ final class FollowersViewController: UIViewController {
                     isLoading = false
                     activityIndicator.stopAnimating()
                     updateFilteredLogins()
-
                     showError(message: error.localizedDescription)
                 }
             }
         }
     }
+
+    // MARK: - Filtering
 
     private func updateFilteredLogins() {
         let searchText = searchController.searchBar.text?
@@ -247,6 +256,8 @@ final class FollowersViewController: UIViewController {
         }
     }
 
+    // MARK: - Diffable Data Source
+
     private func applySnapshot(for logins: [String]) {
         var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
         snapshot.appendSections([0])
@@ -254,6 +265,8 @@ final class FollowersViewController: UIViewController {
 
         dataSource.apply(snapshot, animatingDifferences: true)
     }
+
+    // MARK: - Error Handling
 
     private func showError(message: String) {
         let alert = UIAlertController(
@@ -301,13 +314,11 @@ extension FollowersViewController: UICollectionViewDelegateFlowLayout {
     }
 }
 
-// MARK: - Search
+// MARK: - Search Results Updating
 
 extension FollowersViewController: UISearchResultsUpdating {
 
-    func updateSearchResults(
-        for searchController: UISearchController
-    ) {
+    func updateSearchResults(for searchController: UISearchController) {
         updateFilteredLogins()
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 import GitHubNetworking
 
 struct RepositoryView: View {
+
     @StateObject private var viewModel = RepositoryViewModel()
 
     let username: String
@@ -11,49 +12,35 @@ struct RepositoryView: View {
         Group {
             if viewModel.isLoading && viewModel.repositories.isEmpty {
                 ProgressView("Loading repositories...")
+                    .tint(AppTheme.swiftUIAccent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
             } else if viewModel.repositories.isEmpty {
                 ContentUnavailableView(
                     "No Repositories",
                     systemImage: "book.closed",
                     description: Text(
                         viewModel.errorMessage
-                        ?? "This user has no public repositories."
+                            ?? "This user has no public repositories."
                     )
                 )
+                .foregroundStyle(AppTheme.swiftUIPrimaryText)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
             } else {
-                List(viewModel.repositories) { repository in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(repository.name)
-                            .font(.headline)
-
-                        if let description = repository.description,
-                           !description.isEmpty {
-                            Text(description)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        HStack {
-                            if let language = repository.language {
-                                Label(language, systemImage: "chevron.left.forwardslash.chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            Label(
-                                "\(repository.stars)",
-                                systemImage: "star.fill"
-                            )
-                            .font(.caption)
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        ForEach(viewModel.repositories) { repository in
+                            repositoryCard(repository)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
                 }
-                .listStyle(.plain)
+                .background(AppTheme.swiftUIBackground)
             }
         }
+        .background(AppTheme.swiftUIBackground)
         .navigationTitle("\(username)'s Repos")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -63,7 +50,11 @@ struct RepositoryView: View {
             "Unable to Load Repositories",
             isPresented: Binding(
                 get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.errorMessage = nil } }
+                set: {
+                    if !$0 {
+                        viewModel.errorMessage = nil
+                    }
+                }
             )
         ) {
             Button("OK", role: .cancel) {
@@ -71,6 +62,70 @@ struct RepositoryView: View {
             }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+    }
+
+    // MARK: - Repository Card
+
+    private func repositoryCard(
+        _ repository: GitHubRepository
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "book.closed.fill")
+                    .font(.title3)
+                    .foregroundStyle(AppTheme.swiftUIAccent)
+
+                Text(repository.name)
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.swiftUIPrimaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+            }
+
+            if let description = repository.description,
+               !description.isEmpty {
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.swiftUISecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            HStack(spacing: 12) {
+                if let language = repository.language {
+                    Label(
+                        language,
+                        systemImage: "chevron.left.forwardslash.chevron.right"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.swiftUISecondaryText)
+                    .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                Label(
+                    "\(repository.stars)",
+                    systemImage: "star.fill"
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(AppTheme.swiftUIAccent)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.swiftUISecondaryBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    AppTheme.swiftUISecondaryText.opacity(0.15),
+                    lineWidth: 1
+                )
         }
     }
 }

@@ -14,6 +14,7 @@ struct UserProfileView: View {
         Group {
             if viewModel.isLoading {
                 ProgressView("Loading profile...")
+                    .tint(AppTheme.swiftUIAccent)
             } else if let user = viewModel.user {
                 profileContent(user)
             } else {
@@ -40,7 +41,11 @@ struct UserProfileView: View {
             "Unable to Load Profile",
             isPresented: Binding(
                 get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.errorMessage = nil } }
+                set: {
+                    if !$0 {
+                        viewModel.errorMessage = nil
+                    }
+                }
             )
         ) {
             Button("OK", role: .cancel) {
@@ -50,6 +55,8 @@ struct UserProfileView: View {
             Text(viewModel.errorMessage ?? "")
         }
     }
+
+    // MARK: - Profile Content
 
     private func profileContent(_ user: GitHubUser) -> some View {
         ScrollView {
@@ -66,32 +73,35 @@ struct UserProfileView: View {
                         Image(systemName: "person.crop.circle.fill")
                             .resizable()
                             .scaledToFit()
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppTheme.swiftUISecondaryText)
 
                     case .empty:
                         ProgressView()
+                            .tint(AppTheme.swiftUIAccent)
 
                     @unknown default:
                         Image(systemName: "person.crop.circle.fill")
                             .resizable()
                             .scaledToFit()
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppTheme.swiftUISecondaryText)
                     }
                 }
                 .frame(width: 120, height: 120)
-                .background(Color(.secondarySystemBackground))
+                .background(AppTheme.swiftUISecondaryBackground)
                 .clipShape(Circle())
 
                 Text(user.name ?? user.login)
                     .font(.title2)
                     .fontWeight(.bold)
+                    .foregroundStyle(AppTheme.swiftUIPrimaryText)
 
                 Text("@\(user.login)")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.swiftUISecondaryText)
 
                 if let bio = user.bio, !bio.isEmpty {
                     Text(bio)
                         .multilineTextAlignment(.center)
+                        .foregroundStyle(AppTheme.swiftUIPrimaryText)
                         .padding(.horizontal)
                 }
 
@@ -106,6 +116,8 @@ struct UserProfileView: View {
                         count: user.following ?? 0
                     )
                 }
+
+                // MARK: - Favourites
 
                 Button {
                     if isFavourite {
@@ -122,12 +134,17 @@ struct UserProfileView: View {
                     )
                 }
                 .buttonStyle(.bordered)
-                .tint(isFavourite ? .red : .accentColor)
+                .tint(isFavourite ? .red : AppTheme.swiftUIAccent)
+
+                // MARK: - Followers
 
                 Button("Get Followers") {
                     onGetFollowers(user.login)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(AppTheme.swiftUIAccent)
+
+                // MARK: - Repositories
 
                 NavigationLink {
                     RepositoryView(username: user.login)
@@ -138,20 +155,25 @@ struct UserProfileView: View {
                     )
                 }
                 .buttonStyle(.bordered)
+                .tint(AppTheme.swiftUIAccent)
             }
             .frame(maxWidth: .infinity)
             .padding()
         }
+        .background(AppTheme.swiftUIBackground)
     }
+
+    // MARK: - Follower and Following Counts
 
     private func countView(title: String, count: Int) -> some View {
         VStack(spacing: 6) {
             Text("\(count)")
                 .font(.title3)
                 .fontWeight(.bold)
+                .foregroundStyle(AppTheme.swiftUIPrimaryText)
 
             Text(title)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppTheme.swiftUISecondaryText)
         }
     }
 }

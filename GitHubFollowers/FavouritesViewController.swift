@@ -13,13 +13,27 @@ final class FavouritesViewController: UIViewController {
         style: .insetGrouped
     )
 
+    // In-memory image cache
     private static let imageCache = NSCache<NSString, UIImage>()
+
+    // Disk image cache
+    private static let diskCacheDirectory: URL = {
+        let cachesDirectory = FileManager.default.urls(
+            for: .cachesDirectory,
+            in: .userDomainMask
+        )[0]
+
+        return cachesDirectory.appendingPathComponent(
+            "GitHubAvatarCache",
+            isDirectory: true
+        )
+    }()
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
         title = "Favourites"
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = AppTheme.background
 
         configureTableView()
         configureDataSource()
@@ -31,14 +45,19 @@ final class FavouritesViewController: UIViewController {
         loadFavourites()
     }
 
+    // MARK: - Table View
+
     private func configureTableView() {
         tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.backgroundColor = AppTheme.background
+        tableView.separatorStyle = .none
+        tableView.rowHeight = 85
+        tableView.delegate = self
+
         tableView.register(
             UITableViewCell.self,
             forCellReuseIdentifier: "FavouriteCell"
         )
-        tableView.delegate = self
-        tableView.rowHeight = 85
 
         view.addSubview(tableView)
 
@@ -46,11 +65,19 @@ final class FavouritesViewController: UIViewController {
             tableView.topAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.topAnchor
             ),
-            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            tableView.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor
+            ),
+            tableView.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor
+            ),
+            tableView.bottomAnchor.constraint(
+                equalTo: view.bottomAnchor
+            )
         ])
     }
+
+    // MARK: - Data Source
 
     private func configureDataSource() {
         dataSource = UITableViewDiffableDataSource<Int, Int>(
@@ -63,27 +90,39 @@ final class FavouritesViewController: UIViewController {
             )
 
             guard let self,
-                  let user = self.favourites.first(where: { $0.id == userID })
-            else {
+                  let user = self.favourites.first(where: {
+                      $0.id == userID
+                  }) else {
                 return cell
             }
+
+            // IMPORTANT: Load the cached image BEFORE configuring the cell.
+            let cachedImage = self.cachedAvatar(for: user.avatarURL)
 
             var content = cell.defaultContentConfiguration()
             content.text = user.login
             content.secondaryText = user.name ?? "GitHub user"
-            content.image = UIImage(
+
+            content.image = cachedImage ?? UIImage(
                 systemName: "person.crop.circle.fill"
             )
-            content.imageProperties.tintColor = .secondaryLabel
+
+            content.imageProperties.tintColor = AppTheme.secondaryText
             content.imageProperties.maximumSize = CGSize(
                 width: 44,
                 height: 44
             )
+            content.imageProperties.cornerRadius = 22
 
+            cell.backgroundColor = AppTheme.secondaryBackground
+            cell.contentView.backgroundColor = AppTheme.secondaryBackground
             cell.contentConfiguration = content
             cell.accessoryType = .disclosureIndicator
 
-            self.loadAvatar(for: user, at: indexPath)
+            // Download only if neither cache contains the image.
+            if cachedImage == nil {
+                self.downloadAvatar(for: user)
+            }
 
             return cell
         }
@@ -91,21 +130,82 @@ final class FavouritesViewController: UIViewController {
         dataSource?.defaultRowAnimation = .automatic
     }
 
-    private func loadAvatar(for user: GitHubUser, at indexPath: IndexPath) {
-        let cacheKey = user.avatarURL.absoluteString as NSString
+    // MARK: - Cache Helpers
 
-        if let cachedImage = Self.imageCache.object(forKey: cacheKey) {
-            updateAvatar(cachedImage, for: user.id, at: indexPath)
+    private func cacheFileURL(for avatarURL: URL) -> URL {
+        let filename = Data(avatarURL.absoluteString.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
+
+        return Self.diskCacheDirectory
+            .appendingPathComponent(filename)
+            .appendingPathExtension("img")
+    }
+
+    private func cachedAvatar(for avatarURL: URL) -> UIImage? {
+        let key = avatarURL.absoluteString as NSString
+
+        // 1. Fast in-memory lookup.
+        if let image = Self.imageCache.object(forKey: key) {
+            return image
+        }
+
+        // 2. Persistent disk-cache lookup.
+        let fileURL = cacheFileURL(for: avatarURL)
+
+        guard let data = try? Data(contentsOf: fileURL),
+              let image = UIImage(data: data) else {
+            return nil
+        }
+
+        // Restore the image to memory for future reuse.
+        Self.imageCache.setObject(image, forKey: key)
+
+        return image
+    }
+
+    private func saveAvatarToDisk(
+        _ data: Data,
+        for avatarURL: URL
+    ) {
+        do {
+            try FileManager.default.createDirectory(
+                at: Self.diskCacheDirectory,
+                withIntermediateDirectories: true
+            )
+
+            try data.write(
+                to: cacheFileURL(for: avatarURL),
+                options: .atomic
+            )
+        } catch {
+            // The in-memory cache can still be used.
+        }
+    }
+
+    // MARK: - Download Avatar
+
+    private func downloadAvatar(for user: GitHubUser) {
+        let avatarURL = user.avatarURL
+        let cacheKey = avatarURL.absoluteString as NSString
+
+        // Avoid downloading an image already cached in memory.
+        guard Self.imageCache.object(forKey: cacheKey) == nil else {
             return
         }
 
-        let avatarURL = user.avatarURL
-
-        Task {
+        Task { [weak self] in
             do {
-                let (data, _) = try await URLSession.shared.data(
+                let (data, response) = try await URLSession.shared.data(
                     from: avatarURL
                 )
+
+                if let response = response as? HTTPURLResponse,
+                   !(200...299).contains(response.statusCode) {
+                    return
+                }
 
                 guard let image = UIImage(data: data) else {
                     return
@@ -113,41 +213,55 @@ final class FavouritesViewController: UIViewController {
 
                 Self.imageCache.setObject(image, forKey: cacheKey)
 
+                self?.saveAvatarToDisk(data, for: avatarURL)
+
                 await MainActor.run {
-                    self.updateAvatar(image, for: user.id, at: indexPath)
+                    self?.updateVisibleAvatar(
+                        image,
+                        for: user.id
+                    )
                 }
             } catch {
-                // Keep the placeholder icon if loading fails.
+                // Keep the placeholder if the download fails.
             }
         }
     }
 
-    private func updateAvatar(
+    // MARK: - Update Visible Cell
+
+    @MainActor
+    private func updateVisibleAvatar(
         _ image: UIImage,
-        for userID: Int,
-        at indexPath: IndexPath
+        for userID: Int
     ) {
-        guard
-            let currentID = dataSource?.itemIdentifier(for: indexPath),
-            currentID == userID,
-            let cell = tableView.cellForRow(at: indexPath),
-            let user = favourites.first(where: { $0.id == userID })
-        else {
-            return
+        // Find the currently visible cell by user ID, not an old index path.
+        for cell in tableView.visibleCells {
+            guard
+                let indexPath = tableView.indexPath(for: cell),
+                dataSource?.itemIdentifier(for: indexPath) == userID,
+                let user = favourites.first(where: { $0.id == userID })
+            else {
+                continue
+            }
+
+            var content = cell.defaultContentConfiguration()
+            content.text = user.login
+            content.secondaryText = user.name ?? "GitHub user"
+            content.image = image
+
+            content.imageProperties.maximumSize = CGSize(
+                width: 44,
+                height: 44
+            )
+            content.imageProperties.cornerRadius = 22
+
+            cell.backgroundColor = AppTheme.secondaryBackground
+            cell.contentView.backgroundColor = AppTheme.secondaryBackground
+            cell.contentConfiguration = content
         }
-
-        var content = cell.defaultContentConfiguration()
-        content.text = user.login
-        content.secondaryText = user.name ?? "GitHub user"
-        content.image = image
-        content.imageProperties.maximumSize = CGSize(
-            width: 44,
-            height: 44
-        )
-        content.imageProperties.cornerRadius = 22
-
-        cell.contentConfiguration = content
     }
+
+    // MARK: - Favourites
 
     private func loadFavourites() {
         favourites = FavouritesManager.shared.getFavourites()
@@ -156,7 +270,10 @@ final class FavouritesViewController: UIViewController {
         snapshot.appendSections([0])
         snapshot.appendItems(favourites.map(\.id))
 
-        dataSource?.apply(snapshot, animatingDifferences: true)
+        dataSource?.apply(
+            snapshot,
+            animatingDifferences: true
+        )
 
         tableView.backgroundView = favourites.isEmpty
             ? emptyStateView()
@@ -168,7 +285,7 @@ final class FavouritesViewController: UIViewController {
         let label = UILabel()
 
         label.text = "No favourites yet"
-        label.textColor = .secondaryLabel
+        label.textColor = AppTheme.secondaryText
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 17)
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -186,6 +303,8 @@ final class FavouritesViewController: UIViewController {
 
         return container
     }
+
+    // MARK: - Profile Navigation
 
     private func openProfile(for user: GitHubUser) {
         let profileView = UserProfileView(
@@ -208,6 +327,8 @@ final class FavouritesViewController: UIViewController {
         )
     }
 }
+
+// MARK: - Table View Delegate
 
 extension FavouritesViewController: UITableViewDelegate {
 
@@ -243,6 +364,7 @@ extension FavouritesViewController: UITableViewDelegate {
 
             FavouritesManager.shared.removeFavourite(id: userID)
             self?.loadFavourites()
+
             completion(true)
         }
 

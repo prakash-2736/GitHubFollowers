@@ -15,6 +15,7 @@ final class SearchViewController: UIViewController,
         label.font = .systemFont(ofSize: 30, weight: .bold)
         label.textAlignment = .center
         label.numberOfLines = 0
+        label.textColor = AppTheme.primaryText
         return label
     }()
 
@@ -22,7 +23,7 @@ final class SearchViewController: UIViewController,
         let label = UILabel()
         label.text = "Find a GitHub user and explore their followers."
         label.font = .systemFont(ofSize: 16)
-        label.textColor = .secondaryLabel
+        label.textColor = AppTheme.secondaryText
         label.textAlignment = .center
         label.numberOfLines = 0
         return label
@@ -32,6 +33,8 @@ final class SearchViewController: UIViewController,
         let textField = UITextField()
         textField.placeholder = "Enter GitHub username"
         textField.borderStyle = .roundedRect
+        textField.textColor = AppTheme.primaryText
+        textField.backgroundColor = AppTheme.secondaryBackground
         textField.autocorrectionType = .no
         textField.autocapitalizationType = .none
         textField.returnKeyType = .search
@@ -45,6 +48,7 @@ final class SearchViewController: UIViewController,
         var configuration = UIButton.Configuration.filled()
         configuration.title = "Get Followers"
         configuration.cornerStyle = .medium
+        configuration.baseBackgroundColor = AppTheme.accent
 
         let button = UIButton(configuration: configuration)
         button.accessibilityHint = "Search for a GitHub user"
@@ -57,6 +61,7 @@ final class SearchViewController: UIViewController,
         configuration.title = "View Favourites"
         configuration.image = UIImage(systemName: "heart.fill")
         configuration.imagePadding = 8
+        configuration.baseForegroundColor = AppTheme.accent
 
         let button = UIButton(configuration: configuration)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -68,7 +73,7 @@ final class SearchViewController: UIViewController,
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = AppTheme.background
 
         setupLayout()
         setupKeyboard()
@@ -176,6 +181,7 @@ final class SearchViewController: UIViewController,
         )
     }
 
+
     @objc private func searchButtonTapped() {
         view.endEditing(true)
 
@@ -205,10 +211,12 @@ final class SearchViewController: UIViewController,
                     username: username
                 )
 
+                let navigationController = self.navigationController
+
                 let profileView = UserProfileView(
                     username: user.login,
-                    onGetFollowers: { [weak self] login in
-                        self?.navigationController?.pushViewController(
+                    onGetFollowers: { login in
+                        navigationController?.pushViewController(
                             FollowersViewController(username: login),
                             animated: true
                         )
@@ -219,10 +227,11 @@ final class SearchViewController: UIViewController,
                     rootView: profileView
                 )
 
-                navigationController?.pushViewController(
+                self.navigationController?.pushViewController(
                     hostingController,
                     animated: true
                 )
+
             } catch let error as GitHubAPIError {
                 showAlert(
                     title: "Search Failed",
@@ -236,6 +245,7 @@ final class SearchViewController: UIViewController,
             }
         }
     }
+
 
     private func showAlert(title: String, message: String) {
         let alert = UIAlertController(
