@@ -101,10 +101,19 @@ struct UserProfileView: View {
                     )
                 }
 
+
                 Button("Get Followers") {
                     onGetFollowers(user.login)
                 }
                 .buttonStyle(.borderedProminent)
+
+                NavigationLink {
+                    RepositoryView(username: user.login)
+                } label: {
+                    Label("Get Repositories", systemImage: "book.closed")
+                }
+                .buttonStyle(.bordered)
+
             }
             .frame(maxWidth: .infinity)
             .padding()
