@@ -70,6 +70,8 @@ final class SearchViewController: UIViewController,
 
     private let keyboardToolbar = UIToolbar()
 
+    // MARK: - Lifecycle
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -90,6 +92,8 @@ final class SearchViewController: UIViewController,
             for: .touchUpInside
         )
     }
+
+    // MARK: - Layout
 
     private func setupLayout() {
         let stackView = UIStackView(
@@ -113,26 +117,33 @@ final class SearchViewController: UIViewController,
                 equalTo: view.safeAreaLayoutGuide.leadingAnchor,
                 constant: 24
             ),
+
             stackView.trailingAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.trailingAnchor,
                 constant: -24
             ),
+
             stackView.centerYAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.centerYAnchor
             ),
+
             stackView.topAnchor.constraint(
                 greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor,
                 constant: 20
             ),
+
             stackView.bottomAnchor.constraint(
                 lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor,
                 constant: -20
             ),
+
             usernameTextField.heightAnchor.constraint(equalToConstant: 48),
             searchButton.heightAnchor.constraint(equalToConstant: 50),
             favouritesButton.heightAnchor.constraint(equalToConstant: 48)
         ])
     }
+
+    // MARK: - Keyboard
 
     private func setupKeyboard() {
         usernameTextField.delegate = self
@@ -158,6 +169,7 @@ final class SearchViewController: UIViewController,
             target: self,
             action: #selector(dismissKeyboard)
         )
+
         tapGesture.cancelsTouchesInView = false
         tapGesture.delegate = self
         view.addGestureRecognizer(tapGesture)
@@ -172,6 +184,8 @@ final class SearchViewController: UIViewController,
         return true
     }
 
+    // MARK: - Favourites Navigation
+
     @objc private func favouritesButtonTapped() {
         view.endEditing(true)
 
@@ -181,6 +195,7 @@ final class SearchViewController: UIViewController,
         )
     }
 
+    // MARK: - Search GitHub User
 
     @objc private func searchButtonTapped() {
         view.endEditing(true)
@@ -188,6 +203,7 @@ final class SearchViewController: UIViewController,
         guard let username = usernameTextField.text?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !username.isEmpty else {
+
             showAlert(
                 title: "Username Required",
                 message: "Please enter a GitHub username."
@@ -200,7 +216,9 @@ final class SearchViewController: UIViewController,
         searchButton.isEnabled = false
         searchButton.configuration?.title = "Searching..."
 
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
             defer {
                 searchButton.isEnabled = true
                 searchButton.configuration?.title = "Get Followers"
@@ -211,13 +229,30 @@ final class SearchViewController: UIViewController,
                     username: username
                 )
 
+                // Capture navigation controller weakly for navigation closures.
                 let navigationController = self.navigationController
 
                 let profileView = UserProfileView(
                     username: user.login,
-                    onGetFollowers: { login in
+
+                    onGetFollowers: { [weak navigationController] login in
                         navigationController?.pushViewController(
                             FollowersViewController(username: login),
+                            animated: true
+                        )
+                    },
+
+                    onGetRepositories: { [weak navigationController] login in
+                        let repositoryView = RepositoryView(
+                            username: login
+                        )
+
+                        let hostingController = UIHostingController(
+                            rootView: repositoryView
+                        )
+
+                        navigationController?.pushViewController(
+                            hostingController,
                             animated: true
                         )
                     }
@@ -237,6 +272,7 @@ final class SearchViewController: UIViewController,
                     title: "Search Failed",
                     message: error.localizedDescription
                 )
+
             } catch {
                 showAlert(
                     title: "Search Failed",
@@ -246,6 +282,7 @@ final class SearchViewController: UIViewController,
         }
     }
 
+    // MARK: - Alert
 
     private func showAlert(title: String, message: String) {
         let alert = UIAlertController(
@@ -261,10 +298,13 @@ final class SearchViewController: UIViewController,
         present(alert, animated: true)
     }
 
+    // MARK: - Gesture Recognizer
+
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldReceive touch: UITouch
     ) -> Bool {
+
         guard let touchedView = touch.view else { return true }
 
         if touchedView is UIButton {

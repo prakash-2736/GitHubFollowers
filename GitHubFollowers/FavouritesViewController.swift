@@ -7,27 +7,14 @@ final class FavouritesViewController: UIViewController {
 
     private var favourites: [GitHubUser] = []
     private var dataSource: UITableViewDiffableDataSource<Int, Int>?
+    private var imageTasks: [Int: Task<Void, Never>] = [:]
 
     private let tableView = UITableView(
         frame: .zero,
         style: .insetGrouped
     )
 
-    // In-memory image cache
-    private static let imageCache = NSCache<NSString, UIImage>()
-
-    // Disk image cache
-    private static let diskCacheDirectory: URL = {
-        let cachesDirectory = FileManager.default.urls(
-            for: .cachesDirectory,
-            in: .userDomainMask
-        )[0]
-
-        return cachesDirectory.appendingPathComponent(
-            "GitHubAvatarCache",
-            isDirectory: true
-        )
-    }()
+    // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -43,6 +30,13 @@ final class FavouritesViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         loadFavourites()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+
+        imageTasks.values.forEach { $0.cancel() }
+        imageTasks.removeAll()
     }
 
     // MARK: - Table View
@@ -96,17 +90,13 @@ final class FavouritesViewController: UIViewController {
                 return cell
             }
 
-            // IMPORTANT: Load the cached image BEFORE configuring the cell.
-            let cachedImage = self.cachedAvatar(for: user.avatarURL)
-
             var content = cell.defaultContentConfiguration()
+
             content.text = user.login
             content.secondaryText = user.name ?? "GitHub user"
-
-            content.image = cachedImage ?? UIImage(
+            content.image = UIImage(
                 systemName: "person.crop.circle.fill"
             )
-
             content.imageProperties.tintColor = AppTheme.secondaryText
             content.imageProperties.maximumSize = CGSize(
                 width: 44,
@@ -119,10 +109,7 @@ final class FavouritesViewController: UIViewController {
             cell.contentConfiguration = content
             cell.accessoryType = .disclosureIndicator
 
-            // Download only if neither cache contains the image.
-            if cachedImage == nil {
-                self.downloadAvatar(for: user)
-            }
+            self.loadAvatar(for: user)
 
             return cell
         }
@@ -130,125 +117,61 @@ final class FavouritesViewController: UIViewController {
         dataSource?.defaultRowAnimation = .automatic
     }
 
-    // MARK: - Cache Helpers
+    // MARK: - Avatar Loading
 
-    private func cacheFileURL(for avatarURL: URL) -> URL {
-        let filename = Data(avatarURL.absoluteString.utf8)
-            .base64EncodedString()
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "=", with: "")
-
-        return Self.diskCacheDirectory
-            .appendingPathComponent(filename)
-            .appendingPathExtension("img")
-    }
-
-    private func cachedAvatar(for avatarURL: URL) -> UIImage? {
-        let key = avatarURL.absoluteString as NSString
-
-        // 1. Fast in-memory lookup.
-        if let image = Self.imageCache.object(forKey: key) {
-            return image
-        }
-
-        // 2. Persistent disk-cache lookup.
-        let fileURL = cacheFileURL(for: avatarURL)
-
-        guard let data = try? Data(contentsOf: fileURL),
-              let image = UIImage(data: data) else {
-            return nil
-        }
-
-        // Restore the image to memory for future reuse.
-        Self.imageCache.setObject(image, forKey: key)
-
-        return image
-    }
-
-    private func saveAvatarToDisk(
-        _ data: Data,
-        for avatarURL: URL
-    ) {
-        do {
-            try FileManager.default.createDirectory(
-                at: Self.diskCacheDirectory,
-                withIntermediateDirectories: true
-            )
-
-            try data.write(
-                to: cacheFileURL(for: avatarURL),
-                options: .atomic
-            )
-        } catch {
-            // The in-memory cache can still be used.
-        }
-    }
-
-    // MARK: - Download Avatar
-
-    private func downloadAvatar(for user: GitHubUser) {
-        let avatarURL = user.avatarURL
-        let cacheKey = avatarURL.absoluteString as NSString
-
-        // Avoid downloading an image already cached in memory.
-        guard Self.imageCache.object(forKey: cacheKey) == nil else {
+    private func loadAvatar(for user: GitHubUser) {
+        guard imageTasks[user.id] == nil else {
             return
         }
 
-        Task { [weak self] in
+        let task = Task { [weak self] in
             do {
-                let (data, response) = try await URLSession.shared.data(
-                    from: avatarURL
+                let image = try await ImageLoader.shared.loadImage(
+                    from: user.avatarURL
                 )
 
-                if let response = response as? HTTPURLResponse,
-                   !(200...299).contains(response.statusCode) {
+                guard !Task.isCancelled else {
                     return
                 }
 
-                guard let image = UIImage(data: data) else {
-                    return
-                }
+                self?.updateVisibleAvatar(
+                    image,
+                    for: user.id
+                )
 
-                Self.imageCache.setObject(image, forKey: cacheKey)
-
-                self?.saveAvatarToDisk(data, for: avatarURL)
-
-                await MainActor.run {
-                    self?.updateVisibleAvatar(
-                        image,
-                        for: user.id
-                    )
-                }
+            } catch is CancellationError {
+                // Expected when the screen disappears.
             } catch {
-                // Keep the placeholder if the download fails.
+                // Keep the placeholder if loading fails.
             }
-        }
-    }
 
-    // MARK: - Update Visible Cell
+            self?.imageTasks[user.id] = nil
+        }
+
+        imageTasks[user.id] = task
+    }
 
     @MainActor
     private func updateVisibleAvatar(
         _ image: UIImage,
         for userID: Int
     ) {
-        // Find the currently visible cell by user ID, not an old index path.
         for cell in tableView.visibleCells {
             guard
                 let indexPath = tableView.indexPath(for: cell),
                 dataSource?.itemIdentifier(for: indexPath) == userID,
-                let user = favourites.first(where: { $0.id == userID })
+                let user = favourites.first(where: {
+                    $0.id == userID
+                })
             else {
                 continue
             }
 
             var content = cell.defaultContentConfiguration()
+
             content.text = user.login
             content.secondaryText = user.name ?? "GitHub user"
             content.image = image
-
             content.imageProperties.maximumSize = CGSize(
                 width: 44,
                 height: 44
@@ -266,9 +189,32 @@ final class FavouritesViewController: UIViewController {
     private func loadFavourites() {
         favourites = FavouritesManager.shared.getFavourites()
 
+        let favouriteIDs = Set(favourites.map(\.id))
+
+        for (userID, task) in imageTasks
+        where !favouriteIDs.contains(userID) {
+            task.cancel()
+            imageTasks[userID] = nil
+        }
+
         var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
         snapshot.appendSections([0])
-        snapshot.appendItems(favourites.map(\.id))
+
+        let userIDs = favourites.map(\.id)
+        snapshot.appendItems(userIDs)
+
+        // Reconfigure existing rows so cancelled avatar tasks restart.
+        let existingIDs = Set(
+            dataSource?.snapshot().itemIdentifiers ?? []
+        )
+
+        let IDsToReconfigure = userIDs.filter {
+            existingIDs.contains($0)
+        }
+
+        if !IDsToReconfigure.isEmpty {
+            snapshot.reconfigureItems(IDsToReconfigure)
+        }
 
         dataSource?.apply(
             snapshot,
@@ -307,11 +253,27 @@ final class FavouritesViewController: UIViewController {
     // MARK: - Profile Navigation
 
     private func openProfile(for user: GitHubUser) {
+        let navigationController = self.navigationController
+
         let profileView = UserProfileView(
             username: user.login,
-            onGetFollowers: { [weak self] login in
-                self?.navigationController?.pushViewController(
+            onGetFollowers: { [weak navigationController] login in
+                navigationController?.pushViewController(
                     FollowersViewController(username: login),
+                    animated: true
+                )
+            },
+            onGetRepositories: { [weak navigationController] login in
+                let repositoryView = RepositoryView(
+                    username: login
+                )
+
+                let hostingController = UIHostingController(
+                    rootView: repositoryView
+                )
+
+                navigationController?.pushViewController(
+                    hostingController,
                     animated: true
                 )
             }
@@ -340,7 +302,9 @@ extension FavouritesViewController: UITableViewDelegate {
 
         guard
             let userID = dataSource?.itemIdentifier(for: indexPath),
-            let user = favourites.first(where: { $0.id == userID })
+            let user = favourites.first(where: {
+                $0.id == userID
+            })
         else {
             return
         }
