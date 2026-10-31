@@ -1,8 +1,12 @@
 
 import UIKit
 import GitHubNetworking
-final class SearchViewController: UIViewController {
+
+final class SearchViewController: UIViewController,
+    UITextFieldDelegate,
+    UIGestureRecognizerDelegate {
     private let apiClient = GitHubAPIClient()
+
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.text = "GitHub Followers"
@@ -29,7 +33,9 @@ final class SearchViewController: UIViewController {
         textField.autocorrectionType = .no
         textField.autocapitalizationType = .none
         textField.returnKeyType = .search
+        textField.clearButtonMode = .whileEditing
         textField.accessibilityLabel = "GitHub username"
+        textField.translatesAutoresizingMaskIntoConstraints = false
         return textField
     }()
 
@@ -40,14 +46,20 @@ final class SearchViewController: UIViewController {
 
         let button = UIButton(configuration: configuration)
         button.accessibilityHint = "Search for a GitHub user"
+        button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+
+    private let keyboardToolbar = UIToolbar()
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
         view.backgroundColor = .systemBackground
+
         setupLayout()
+        setupKeyboard()
+
         searchButton.addTarget(
             self,
             action: #selector(searchButtonTapped),
@@ -83,13 +95,60 @@ final class SearchViewController: UIViewController {
             stackView.centerYAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.centerYAnchor
             ),
+            stackView.topAnchor.constraint(
+                greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: 20
+            ),
+            stackView.bottomAnchor.constraint(
+                lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor,
+                constant: -20
+            ),
             usernameTextField.heightAnchor.constraint(equalToConstant: 48),
             searchButton.heightAnchor.constraint(equalToConstant: 50)
         ])
     }
 
-   
+    private func setupKeyboard() {
+        usernameTextField.delegate = self
+
+        keyboardToolbar.sizeToFit()
+
+        let flexibleSpace = UIBarButtonItem(
+            barButtonSystemItem: .flexibleSpace,
+            target: nil,
+            action: nil
+        )
+
+        let doneButton = UIBarButtonItem(
+            barButtonSystemItem: .done,
+            target: self,
+            action: #selector(dismissKeyboard)
+        )
+
+        keyboardToolbar.items = [flexibleSpace, doneButton]
+        usernameTextField.inputAccessoryView = keyboardToolbar
+
+        let tapGesture = UITapGestureRecognizer(
+            target: self,
+            action: #selector(dismissKeyboard)
+        )
+        tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = self
+        view.addGestureRecognizer(tapGesture)
+    }
+
+    @objc private func dismissKeyboard() {
+        view.endEditing(true)
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        searchButtonTapped()
+        return true
+    }
+
     @objc private func searchButtonTapped() {
+        view.endEditing(true)
+
         guard let username = usernameTextField.text?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !username.isEmpty else {
@@ -100,23 +159,27 @@ final class SearchViewController: UIViewController {
             return
         }
 
+        guard searchButton.isEnabled else { return }
+
         searchButton.isEnabled = false
         searchButton.configuration?.title = "Searching..."
 
-        Task {
+        Task { @MainActor in
             defer {
                 searchButton.isEnabled = true
                 searchButton.configuration?.title = "Get Followers"
             }
 
             do {
-                let user = try await apiClient.fetchUser(
-                    username: username
+                let user = try await apiClient.fetchUser(username: username)
+
+                let followersVC = FollowersViewController(
+                    username: user.login
                 )
 
-                showAlert(
-                    title: "User Found",
-                    message: "Found GitHub user: \(user.login)"
+                navigationController?.pushViewController(
+                    followersVC,
+                    animated: true
                 )
             } catch let error as GitHubAPIError {
                 showAlert(
@@ -144,5 +207,19 @@ final class SearchViewController: UIViewController {
         )
 
         present(alert, animated: true)
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        guard let touchedView = touch.view else { return true }
+
+        // Don't let the outside-tap gesture intercept button taps.
+        if touchedView is UIButton {
+            return false
+        }
+
+        return true
     }
 }
