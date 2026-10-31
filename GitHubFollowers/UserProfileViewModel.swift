@@ -12,7 +12,15 @@ final class UserProfileViewModel: ObservableObject {
 
     private let apiClient = GitHubAPIClient()
 
+    init(user: GitHubUser? = nil) {
+        self.user = user
+    }
+
     func loadUser(username: String) async {
+        guard !isLoading else {
+            return
+        }
+
         isLoading = true
         errorMessage = nil
 
@@ -21,7 +29,9 @@ final class UserProfileViewModel: ObservableObject {
         }
 
         do {
-            user = try await apiClient.fetchUser(username: username)
+            user = try await apiClient.fetchUser(
+                username: username
+            )
         } catch {
             errorMessage = error.localizedDescription
         }

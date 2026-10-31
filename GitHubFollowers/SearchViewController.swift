@@ -234,6 +234,7 @@ final class SearchViewController: UIViewController,
 
                 let profileView = UserProfileView(
                     username: user.login,
+                    user: user,
 
                     onGetFollowers: { [weak navigationController] login in
                         navigationController?.pushViewController(

@@ -5,7 +5,7 @@ import GitHubNetworking
 
 struct UserProfileView: View {
 
-    @StateObject private var viewModel = UserProfileViewModel()
+    @StateObject private var viewModel: UserProfileViewModel
 
     @State private var isFavourite = false
     @State private var avatarImage: UIImage?
@@ -13,6 +13,21 @@ struct UserProfileView: View {
     let username: String
     let onGetFollowers: (String) -> Void
     var onGetRepositories: (String) -> Void = { _ in }
+
+    init(
+        username: String,
+        user: GitHubUser? = nil,
+        onGetFollowers: @escaping (String) -> Void,
+        onGetRepositories: @escaping (String) -> Void = { _ in }
+    ) {
+        self.username = username
+        self.onGetFollowers = onGetFollowers
+        self.onGetRepositories = onGetRepositories
+
+        _viewModel = StateObject(
+            wrappedValue: UserProfileViewModel(user: user)
+        )
+    }
 
     var body: some View {
         Group {
@@ -24,7 +39,9 @@ struct UserProfileView: View {
                                 .tint(AppTheme.swiftUIAccent)
                                 .padding()
                                 .background(.regularMaterial)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .clipShape(
+                                    RoundedRectangle(cornerRadius: 12)
+                                )
                         }
                     }
             } else if viewModel.isLoading {
@@ -54,7 +71,7 @@ struct UserProfileView: View {
         .navigationTitle(username)
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            // Avoid fetching the same profile again.
+            // Fetch only when an existing user was not provided.
             if viewModel.user == nil {
                 await viewModel.loadUser(username: username)
             }
@@ -92,6 +109,8 @@ struct UserProfileView: View {
                 .background(AppTheme.swiftUISecondaryBackground)
                 .clipShape(Circle())
                 .task(id: user.avatarURL) {
+                    avatarImage = nil
+
                     do {
                         let image = try await ImageLoader.shared.loadImage(
                             from: user.avatarURL
@@ -102,7 +121,6 @@ struct UserProfileView: View {
                         }
 
                         avatarImage = image
-
                     } catch is CancellationError {
                         // Expected when the task is cancelled.
                     } catch {
