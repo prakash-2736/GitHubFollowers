@@ -1,58 +1,68 @@
 
 import SwiftUI
+import UIKit
 import GitHubNetworking
 
 struct UserProfileView: View {
 
     @StateObject private var viewModel = UserProfileViewModel()
+
     @State private var isFavourite = false
+    @State private var avatarImage: UIImage?
 
     let username: String
     let onGetFollowers: (String) -> Void
+    var onGetRepositories: (String) -> Void = { _ in }
 
     var body: some View {
         Group {
-            if viewModel.isLoading {
+            if let user = viewModel.user {
+                profileContent(user)
+                    .overlay {
+                        if viewModel.isLoading {
+                            ProgressView("Loading profile...")
+                                .tint(AppTheme.swiftUIAccent)
+                                .padding()
+                                .background(.regularMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+            } else if viewModel.isLoading {
                 ProgressView("Loading profile...")
                     .tint(AppTheme.swiftUIAccent)
-            } else if let user = viewModel.user {
-                profileContent(user)
             } else {
-                ContentUnavailableView(
-                    "Profile Unavailable",
-                    systemImage: "person.crop.circle.badge.exclamationmark",
-                    description: Text(
+                ContentUnavailableView {
+                    Label(
+                        "Profile Unavailable",
+                        systemImage: "person.crop.circle.badge.exclamationmark"
+                    )
+                } description: {
+                    Text(
                         viewModel.errorMessage ?? "Unable to load profile."
                     )
-                )
+                } actions: {
+                    Button("Try Again") {
+                        Task {
+                            await viewModel.loadUser(username: username)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.swiftUIAccent)
+                }
             }
         }
         .navigationTitle(username)
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            await viewModel.loadUser(username: username)
+            // Avoid fetching the same profile again.
+            if viewModel.user == nil {
+                await viewModel.loadUser(username: username)
+            }
 
             if let user = viewModel.user {
                 isFavourite = FavouritesManager.shared
                     .isFavourite(id: user.id)
             }
-        }
-        .alert(
-            "Unable to Load Profile",
-            isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: {
-                    if !$0 {
-                        viewModel.errorMessage = nil
-                    }
-                }
-            )
-        ) {
-            Button("OK", role: .cancel) {
-                viewModel.errorMessage = nil
-            }
-        } message: {
-            Text(viewModel.errorMessage ?? "")
         }
     }
 
@@ -62,33 +72,43 @@ struct UserProfileView: View {
         ScrollView {
             VStack(spacing: 20) {
 
-                AsyncImage(url: user.avatarURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
+                // MARK: - Avatar
+
+                Group {
+                    if let avatarImage {
+                        Image(uiImage: avatarImage)
                             .resizable()
                             .scaledToFill()
-
-                    case .failure:
+                    } else {
                         Image(systemName: "person.crop.circle.fill")
                             .resizable()
                             .scaledToFit()
-                            .foregroundStyle(AppTheme.swiftUISecondaryText)
-
-                    case .empty:
-                        ProgressView()
-                            .tint(AppTheme.swiftUIAccent)
-
-                    @unknown default:
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .foregroundStyle(AppTheme.swiftUISecondaryText)
+                            .foregroundStyle(
+                                AppTheme.swiftUISecondaryText
+                            )
                     }
                 }
                 .frame(width: 120, height: 120)
                 .background(AppTheme.swiftUISecondaryBackground)
                 .clipShape(Circle())
+                .task(id: user.avatarURL) {
+                    do {
+                        let image = try await ImageLoader.shared.loadImage(
+                            from: user.avatarURL
+                        )
+
+                        guard !Task.isCancelled else {
+                            return
+                        }
+
+                        avatarImage = image
+
+                    } catch is CancellationError {
+                        // Expected when the task is cancelled.
+                    } catch {
+                        // Keep the placeholder image.
+                    }
+                }
 
                 Text(user.name ?? user.login)
                     .font(.title2)
@@ -104,6 +124,8 @@ struct UserProfileView: View {
                         .foregroundStyle(AppTheme.swiftUIPrimaryText)
                         .padding(.horizontal)
                 }
+
+                // MARK: - Followers and Following
 
                 HStack(spacing: 40) {
                     countView(
@@ -121,7 +143,9 @@ struct UserProfileView: View {
 
                 Button {
                     if isFavourite {
-                        FavouritesManager.shared.removeFavourite(id: user.id)
+                        FavouritesManager.shared.removeFavourite(
+                            id: user.id
+                        )
                     } else {
                         FavouritesManager.shared.addFavourite(user)
                     }
@@ -129,8 +153,12 @@ struct UserProfileView: View {
                     isFavourite.toggle()
                 } label: {
                     Label(
-                        isFavourite ? "Remove Favourite" : "Add to Favourites",
-                        systemImage: isFavourite ? "heart.fill" : "heart"
+                        isFavourite
+                            ? "Remove Favourite"
+                            : "Add to Favourites",
+                        systemImage: isFavourite
+                            ? "heart.fill"
+                            : "heart"
                     )
                 }
                 .buttonStyle(.bordered)
@@ -146,8 +174,8 @@ struct UserProfileView: View {
 
                 // MARK: - Repositories
 
-                NavigationLink {
-                    RepositoryView(username: user.login)
+                Button {
+                    onGetRepositories(user.login)
                 } label: {
                     Label(
                         "Get Repositories",
@@ -165,7 +193,10 @@ struct UserProfileView: View {
 
     // MARK: - Follower and Following Counts
 
-    private func countView(title: String, count: Int) -> some View {
+    private func countView(
+        title: String,
+        count: Int
+    ) -> some View {
         VStack(spacing: 6) {
             Text("\(count)")
                 .font(.title3)
@@ -182,7 +213,8 @@ struct UserProfileView: View {
     NavigationStack {
         UserProfileView(
             username: "octocat",
-            onGetFollowers: { _ in }
+            onGetFollowers: { _ in },
+            onGetRepositories: { _ in }
         )
     }
 }

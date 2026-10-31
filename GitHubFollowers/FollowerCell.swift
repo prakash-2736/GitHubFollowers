@@ -4,35 +4,51 @@ import GitHubNetworking
 
 final class FollowerCell: UICollectionViewCell {
 
+    // MARK: - Reuse Identifier
+
     static let reuseIdentifier = "FollowerCell"
 
-    private static let imageCache = NSCache<NSString, UIImage>()
+    // MARK: - Properties
+
+    private var representedAvatarURL: URL?
+    private var imageTask: Task<Void, Never>?
+
+    // MARK: - UI Components
 
     private let avatarImageView: UIImageView = {
         let imageView = UIImageView()
+
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 35
+
         imageView.backgroundColor = AppTheme.secondaryBackground
-        imageView.image = UIImage(systemName: "person.crop.circle.fill")
+        imageView.image = UIImage(
+            systemName: "person.crop.circle.fill"
+        )
         imageView.tintColor = AppTheme.secondaryText
+
         imageView.translatesAutoresizingMaskIntoConstraints = false
+
         return imageView
     }()
 
     private let usernameLabel: UILabel = {
         let label = UILabel()
+
         label.font = .systemFont(ofSize: 14, weight: .medium)
         label.textAlignment = .center
         label.textColor = AppTheme.primaryText
         label.numberOfLines = 1
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.8
+
         label.translatesAutoresizingMaskIntoConstraints = false
+
         return label
     }()
 
-    private var representedAvatarURL: URL?
+    // MARK: - Initialization
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -43,84 +59,119 @@ final class FollowerCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
+    // MARK: - Cell Reuse
+
     override func prepareForReuse() {
         super.prepareForReuse()
+
+        // Cancel the previous image request.
+        imageTask?.cancel()
+        imageTask = nil
+
         usernameLabel.text = nil
         avatarImageView.image = UIImage(
             systemName: "person.crop.circle.fill"
         )
         avatarImageView.tintColor = AppTheme.secondaryText
+
         representedAvatarURL = nil
     }
 
+    // MARK: - Configure Subviews
+
     private func configureSubviews() {
+
         contentView.addSubview(avatarImageView)
         contentView.addSubview(usernameLabel)
 
         NSLayoutConstraint.activate([
+
             avatarImageView.topAnchor.constraint(
                 equalTo: contentView.topAnchor
             ),
+
             avatarImageView.centerXAnchor.constraint(
                 equalTo: contentView.centerXAnchor
             ),
-            avatarImageView.widthAnchor.constraint(equalToConstant: 70),
-            avatarImageView.heightAnchor.constraint(equalToConstant: 70),
+
+            avatarImageView.widthAnchor.constraint(
+                equalToConstant: 70
+            ),
+
+            avatarImageView.heightAnchor.constraint(
+                equalToConstant: 70
+            ),
 
             usernameLabel.topAnchor.constraint(
                 equalTo: avatarImageView.bottomAnchor,
                 constant: 8
             ),
+
             usernameLabel.leadingAnchor.constraint(
                 equalTo: contentView.leadingAnchor,
                 constant: 2
             ),
+
             usernameLabel.trailingAnchor.constraint(
                 equalTo: contentView.trailingAnchor,
                 constant: -2
             ),
+
             usernameLabel.bottomAnchor.constraint(
                 equalTo: contentView.bottomAnchor
             )
         ])
     }
 
+    // MARK: - Configure Cell
+
     func configure(with follower: GitHubUser) {
+
+        // Cancel any previous request.
+        imageTask?.cancel()
+        imageTask = nil
+
         usernameLabel.text = follower.login
+
+        // Show placeholder while loading.
         avatarImageView.image = UIImage(
             systemName: "person.crop.circle.fill"
         )
         avatarImageView.tintColor = AppTheme.secondaryText
+
         representedAvatarURL = follower.avatarURL
 
-        let cacheKey = follower.avatarURL.absoluteString as NSString
+        let avatarURL = follower.avatarURL
 
-        if let cachedImage = Self.imageCache.object(forKey: cacheKey) {
-            avatarImageView.image = cachedImage
-            return
-        }
+        // Request image from shared ImageLoader.
+        imageTask = Task { [weak self] in
 
-        Task {
             do {
-                let (data, _) = try await URLSession.shared.data(
-                    from: follower.avatarURL
+
+                let image = try await ImageLoader.shared.loadImage(
+                    from: avatarURL
                 )
 
-                guard let image = UIImage(data: data) else {
+                // Ignore cancelled requests.
+                guard !Task.isCancelled else {
                     return
                 }
 
-                Self.imageCache.setObject(image, forKey: cacheKey)
-
-                await MainActor.run {
-                    guard self.representedAvatarURL == follower.avatarURL else {
-                        return
-                    }
-
-                    self.avatarImageView.image = image
+                // Make sure this cell still represents the same user.
+                guard let self,
+                      self.representedAvatarURL == avatarURL else {
+                    return
                 }
+
+                self.avatarImageView.image = image
+
+            } catch is CancellationError {
+
+                // Expected when the cell is reused.
+
             } catch {
-                // Keep the adaptive fallback icon.
+
+                // Keep the placeholder if loading fails.
             }
         }
     }
