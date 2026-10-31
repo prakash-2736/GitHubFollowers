@@ -4,26 +4,39 @@ import GitHubNetworking
 
 final class FollowersViewController: UIViewController {
 
+    // MARK: - Properties
+
     private let username: String
     private let apiClient = GitHubAPIClient()
 
     private var collectionView: UICollectionView!
-    private var followers: [String: GitHubUser] = [:]
+    private var followers: [GitHubUser] = []
+    private var followerIDs = Set<Int>()
+    private var followersByLogin: [String: GitHubUser] = [:]
     private var filteredLogins: [String] = []
 
     private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
     private var searchController: UISearchController!
 
-    // Pagination
+    // MARK: - Pagination
+
     private var currentPage = 1
     private var isLoading = false
     private var hasMoreFollowers = true
-    private let perPage = 50
+    private var hasLoadError = false
+    private var errorMessage: String?
 
-    // Loading and empty states
+    private let perPage = 50
+    private var fetchTask: Task<Void, Never>?
+
+    // MARK: - Loading and Empty States
+
     private let statusView = UIView()
     private let statusLabel = UILabel()
     private let activityIndicator = UIActivityIndicatorView(style: .large)
+    private let retryButton = UIButton(type: .system)
+
+    // MARK: - Initialization
 
     init(username: String) {
         self.username = username
@@ -33,6 +46,8 @@ final class FollowersViewController: UIViewController {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -44,13 +59,23 @@ final class FollowersViewController: UIViewController {
         configureDataSource()
         configureSearchController()
         configureStatusView()
+
         fetchFollowers()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+
+        fetchTask?.cancel()
+        fetchTask = nil
+        isLoading = false
     }
 
     // MARK: - Collection View
 
     private func configureCollectionView() {
         let layout = UICollectionViewFlowLayout()
+
         layout.minimumInteritemSpacing = 8
         layout.minimumLineSpacing = 16
         layout.sectionInset = UIEdgeInsets(
@@ -74,6 +99,7 @@ final class FollowersViewController: UIViewController {
         )
 
         collectionView.delegate = self
+
         view.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
@@ -100,7 +126,7 @@ final class FollowersViewController: UIViewController {
         ) { [weak self] collectionView, indexPath, login in
 
             guard let self,
-                  let follower = self.followers[login],
+                  let follower = self.followersByLogin[login],
                   let cell = collectionView.dequeueReusableCell(
                     withReuseIdentifier: FollowerCell.reuseIdentifier,
                     for: indexPath
@@ -116,7 +142,10 @@ final class FollowersViewController: UIViewController {
     // MARK: - Search
 
     private func configureSearchController() {
-        searchController = UISearchController(searchResultsController: nil)
+        searchController = UISearchController(
+            searchResultsController: nil
+        )
+
         searchController.searchResultsUpdater = self
         searchController.obscuresBackgroundDuringPresentation = false
         searchController.searchBar.placeholder = "Search followers"
@@ -124,6 +153,13 @@ final class FollowersViewController: UIViewController {
         navigationItem.searchController = searchController
         navigationItem.hidesSearchBarWhenScrolling = false
         definesPresentationContext = true
+    }
+
+    private var isSearchFiltering: Bool {
+        let searchText = searchController.searchBar.text?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        return !searchText.isEmpty
     }
 
     // MARK: - Loading and Empty States
@@ -138,16 +174,40 @@ final class FollowersViewController: UIViewController {
         activityIndicator.color = AppTheme.accent
         activityIndicator.translatesAutoresizingMaskIntoConstraints = false
 
+        retryButton.setTitle("Retry", for: .normal)
+        retryButton.setTitleColor(AppTheme.accent, for: .normal)
+        retryButton.titleLabel?.font = .systemFont(
+            ofSize: 16,
+            weight: .semibold
+        )
+        retryButton.addTarget(
+            self,
+            action: #selector(retryButtonTapped),
+            for: .touchUpInside
+        )
+        retryButton.isHidden = true
+        retryButton.translatesAutoresizingMaskIntoConstraints = false
+
         statusView.backgroundColor = AppTheme.background
         statusView.addSubview(statusLabel)
         statusView.addSubview(activityIndicator)
+        statusView.addSubview(retryButton)
 
         NSLayoutConstraint.activate([
-            statusLabel.centerXAnchor.constraint(
+            activityIndicator.centerXAnchor.constraint(
                 equalTo: statusView.centerXAnchor
             ),
-            statusLabel.centerYAnchor.constraint(
-                equalTo: statusView.centerYAnchor
+            activityIndicator.centerYAnchor.constraint(
+                equalTo: statusView.centerYAnchor,
+                constant: -35
+            ),
+
+            statusLabel.topAnchor.constraint(
+                equalTo: activityIndicator.bottomAnchor,
+                constant: 12
+            ),
+            statusLabel.centerXAnchor.constraint(
+                equalTo: statusView.centerXAnchor
             ),
             statusLabel.leadingAnchor.constraint(
                 greaterThanOrEqualTo: statusView.leadingAnchor,
@@ -157,30 +217,84 @@ final class FollowersViewController: UIViewController {
                 lessThanOrEqualTo: statusView.trailingAnchor,
                 constant: -24
             ),
-            activityIndicator.centerXAnchor.constraint(
-                equalTo: statusView.centerXAnchor
+
+            retryButton.topAnchor.constraint(
+                equalTo: statusLabel.bottomAnchor,
+                constant: 12
             ),
-            activityIndicator.centerYAnchor.constraint(
-                equalTo: statusView.centerYAnchor
+            retryButton.centerXAnchor.constraint(
+                equalTo: statusView.centerXAnchor
             )
         ])
 
         collectionView.backgroundView = statusView
     }
 
-    // MARK: - Pagination
+    private func updateEmptyState(searchText: String) {
 
-    private func fetchFollowers() {
-        guard !isLoading, hasMoreFollowers else { return }
+        let shouldShowStatus = filteredLogins.isEmpty
 
-        isLoading = true
+        collectionView.backgroundView = shouldShowStatus
+            ? statusView
+            : nil
 
-        if followers.isEmpty {
-            statusLabel.isHidden = true
-            activityIndicator.startAnimating()
+        guard shouldShowStatus else {
+            activityIndicator.stopAnimating()
+            return
         }
 
-        Task {
+        if isLoading && followers.isEmpty {
+            statusLabel.isHidden = true
+            retryButton.isHidden = true
+            activityIndicator.startAnimating()
+            return
+        }
+
+        activityIndicator.stopAnimating()
+
+        if hasLoadError && followers.isEmpty {
+            statusLabel.text = """
+            Unable to load followers.
+
+            \(errorMessage ?? "Please try again.")
+            """
+            retryButton.isHidden = false
+
+        } else if !searchText.isEmpty {
+            statusLabel.text = "No followers found for \"\(searchText)\"."
+            retryButton.isHidden = true
+
+        } else {
+            statusLabel.text = "This user doesn't have any followers yet."
+            retryButton.isHidden = true
+        }
+
+        statusLabel.isHidden = false
+    }
+
+    // MARK: - Pagination
+
+    private func fetchFollowers(isRetry: Bool = false) {
+
+        guard !isLoading,
+              hasMoreFollowers,
+              !isSearchFiltering,
+              !hasLoadError || isRetry else {
+            return
+        }
+
+        if isRetry {
+            hasLoadError = false
+            errorMessage = nil
+        }
+
+        isLoading = true
+        updateFilteredLogins()
+
+        fetchTask = Task { [weak self] in
+
+            guard let self else { return }
+
             do {
                 let results = try await apiClient.fetchFollowers(
                     username: username,
@@ -188,98 +302,115 @@ final class FollowersViewController: UIViewController {
                     perPage: perPage
                 )
 
-                await MainActor.run {
-                    for follower in results {
-                        followers[follower.login] = follower
-                    }
-
-                    if results.count < perPage {
-                        hasMoreFollowers = false
-                    }
-
-                    currentPage += 1
-                    isLoading = false
-                    activityIndicator.stopAnimating()
-
-                    updateFilteredLogins()
+                guard !Task.isCancelled else {
+                    return
                 }
+
+                // Append results in GitHub API order.
+                for follower in results {
+
+                    // Deduplicate using GitHub user ID.
+                    if followerIDs.insert(follower.id).inserted {
+                        followers.append(follower)
+                        followersByLogin[follower.login] = follower
+                    }
+                }
+
+                if results.count < perPage {
+                    hasMoreFollowers = false
+                }
+
+                currentPage += 1
+                isLoading = false
+                hasLoadError = false
+                errorMessage = nil
+                fetchTask = nil
+
+                updateFilteredLogins()
+
             } catch {
-                await MainActor.run {
+
+                if Task.isCancelled {
                     isLoading = false
-                    activityIndicator.stopAnimating()
-                    updateFilteredLogins()
-                    showError(message: error.localizedDescription)
+                    fetchTask = nil
+                    return
+                }
+
+                isLoading = false
+                hasLoadError = true
+                errorMessage = error.localizedDescription
+                fetchTask = nil
+
+                updateFilteredLogins()
+
+                // Initial failure is shown in the empty state.
+                // Later page failures get an explicit Retry alert.
+                if !followers.isEmpty {
+                    showPaginationError()
                 }
             }
         }
+    }
+
+    // MARK: - Retry
+
+    @objc private func retryButtonTapped() {
+        fetchFollowers(isRetry: true)
+    }
+
+    private func showPaginationError() {
+
+        let alert = UIAlertController(
+            title: "Unable to Load More Followers",
+            message: errorMessage ?? "Please try again.",
+            preferredStyle: .alert
+        )
+
+        alert.addAction(
+            UIAlertAction(title: "Cancel", style: .cancel)
+        )
+
+        alert.addAction(
+            UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
+                self?.fetchFollowers(isRetry: true)
+            }
+        )
+
+        present(alert, animated: true)
     }
 
     // MARK: - Filtering
 
     private func updateFilteredLogins() {
+
         let searchText = searchController.searchBar.text?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-        let allLogins = followers.keys.sorted {
-            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-        }
-
-        if searchText.isEmpty {
-            filteredLogins = allLogins
-        } else {
-            filteredLogins = allLogins.filter {
-                $0.localizedCaseInsensitiveContains(searchText)
+        // Preserve the original API order.
+        filteredLogins = followers
+            .filter {
+                searchText.isEmpty ||
+                $0.login.localizedCaseInsensitiveContains(searchText)
             }
-        }
+            .map(\.login)
 
         updateEmptyState(searchText: searchText)
         applySnapshot(for: filteredLogins)
     }
 
-    private func updateEmptyState(searchText: String) {
-        if isLoading && followers.isEmpty {
-            statusLabel.isHidden = true
-            activityIndicator.startAnimating()
-            return
-        }
-
-        activityIndicator.stopAnimating()
-
-        if !filteredLogins.isEmpty {
-            statusLabel.isHidden = true
-        } else {
-            statusLabel.text = searchText.isEmpty
-                ? "This user doesn't have any followers yet."
-                : "No followers found for \"\(searchText)\"."
-
-            statusLabel.isHidden = false
-        }
-    }
-
     // MARK: - Diffable Data Source
 
     private func applySnapshot(for logins: [String]) {
+
         var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
+
         snapshot.appendSections([0])
         snapshot.appendItems(logins)
 
-        dataSource.apply(snapshot, animatingDifferences: true)
-    }
-
-    // MARK: - Error Handling
-
-    private func showError(message: String) {
-        let alert = UIAlertController(
-            title: "Unable to Load Followers",
-            message: message,
-            preferredStyle: .alert
+        dataSource.apply(
+            snapshot,
+            animatingDifferences: true
         )
-
-        alert.addAction(
-            UIAlertAction(title: "OK", style: .default)
-        )
-
-        present(alert, animated: true)
     }
 }
 
@@ -292,6 +423,7 @@ extension FollowersViewController: UICollectionViewDelegateFlowLayout {
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
+
         let layout = collectionViewLayout as! UICollectionViewFlowLayout
 
         let spacing = layout.sectionInset.left
@@ -304,6 +436,15 @@ extension FollowersViewController: UICollectionViewDelegateFlowLayout {
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+
+        // Do not paginate while filtering or after a failed request.
+        guard !isSearchFiltering,
+              !hasLoadError,
+              !isLoading,
+              hasMoreFollowers else {
+            return
+        }
+
         let offsetY = scrollView.contentOffset.y
         let contentHeight = scrollView.contentSize.height
         let visibleHeight = scrollView.frame.height
