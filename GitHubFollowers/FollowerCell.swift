@@ -13,9 +13,9 @@ final class FollowerCell: UICollectionViewCell {
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 35
-        imageView.backgroundColor = .secondarySystemBackground
+        imageView.backgroundColor = AppTheme.secondaryBackground
         imageView.image = UIImage(systemName: "person.crop.circle.fill")
-        imageView.tintColor = .secondaryLabel
+        imageView.tintColor = AppTheme.secondaryText
         imageView.translatesAutoresizingMaskIntoConstraints = false
         return imageView
     }()
@@ -24,7 +24,7 @@ final class FollowerCell: UICollectionViewCell {
         let label = UILabel()
         label.font = .systemFont(ofSize: 14, weight: .medium)
         label.textAlignment = .center
-        label.textColor = .label
+        label.textColor = AppTheme.primaryText
         label.numberOfLines = 1
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.8
@@ -49,6 +49,7 @@ final class FollowerCell: UICollectionViewCell {
         avatarImageView.image = UIImage(
             systemName: "person.crop.circle.fill"
         )
+        avatarImageView.tintColor = AppTheme.secondaryText
         representedAvatarURL = nil
     }
 
@@ -86,12 +87,10 @@ final class FollowerCell: UICollectionViewCell {
 
     func configure(with follower: GitHubUser) {
         usernameLabel.text = follower.login
-
-        let fallbackImage = UIImage(
+        avatarImageView.image = UIImage(
             systemName: "person.crop.circle.fill"
         )
-
-        avatarImageView.image = fallbackImage
+        avatarImageView.tintColor = AppTheme.secondaryText
         representedAvatarURL = follower.avatarURL
 
         let cacheKey = follower.avatarURL.absoluteString as NSString
@@ -121,7 +120,7 @@ final class FollowerCell: UICollectionViewCell {
                     self.avatarImageView.image = image
                 }
             } catch {
-                // Keep the fallback person icon.
+                // Keep the adaptive fallback icon.
             }
         }
     }
