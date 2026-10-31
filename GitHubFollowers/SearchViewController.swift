@@ -8,6 +8,9 @@ final class SearchViewController: UIViewController,
     UIGestureRecognizerDelegate {
 
     private let apiClient = GitHubAPIClient()
+    private var searchTask: Task<Void, Never>?
+
+    // MARK: - UI Elements
 
     private let titleLabel: UILabel = {
         let label = UILabel()
@@ -91,6 +94,16 @@ final class SearchViewController: UIViewController,
             action: #selector(favouritesButtonTapped),
             for: .touchUpInside
         )
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+
+        searchTask?.cancel()
+        searchTask = nil
+
+        searchButton.isEnabled = true
+        searchButton.configuration?.title = "Get Followers"
     }
 
     // MARK: - Layout
@@ -211,39 +224,53 @@ final class SearchViewController: UIViewController,
             return
         }
 
-        guard searchButton.isEnabled else { return }
+        guard searchButton.isEnabled else {
+            return
+        }
 
         searchButton.isEnabled = false
         searchButton.configuration?.title = "Searching..."
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
+        let client = apiClient
+
+        searchTask = Task { @MainActor [weak self, client] in
 
             defer {
-                searchButton.isEnabled = true
-                searchButton.configuration?.title = "Get Followers"
+                // Do not let a cancelled task change the UI
+                // after the screen has disappeared.
+                if !Task.isCancelled {
+                    self?.searchTask = nil
+                    self?.searchButton.isEnabled = true
+                    self?.searchButton.configuration?.title = "Get Followers"
+                }
             }
 
             do {
-                let user = try await apiClient.fetchUser(
+                let user = try await client.fetchUser(
                     username: username
                 )
 
-                // Capture navigation controller weakly for navigation closures.
-                let navigationController = self.navigationController
+                guard !Task.isCancelled,
+                      let self else {
+                    return
+                }
 
                 let profileView = UserProfileView(
                     username: user.login,
                     user: user,
 
-                    onGetFollowers: { [weak navigationController] login in
-                        navigationController?.pushViewController(
+                    onGetFollowers: { [weak self] login in
+                        self?.navigationController?.pushViewController(
                             FollowersViewController(username: login),
                             animated: true
                         )
                     },
 
-                    onGetRepositories: { [weak navigationController] login in
+                    onGetRepositories: { [weak self] login in
+                        guard let self else {
+                            return
+                        }
+
                         let repositoryView = RepositoryView(
                             username: login
                         )
@@ -252,7 +279,7 @@ final class SearchViewController: UIViewController,
                             rootView: repositoryView
                         )
 
-                        navigationController?.pushViewController(
+                        self.navigationController?.pushViewController(
                             hostingController,
                             animated: true
                         )
@@ -268,17 +295,23 @@ final class SearchViewController: UIViewController,
                     animated: true
                 )
 
-            } catch let error as GitHubAPIError {
-                showAlert(
-                    title: "Search Failed",
-                    message: error.localizedDescription
-                )
-
             } catch {
-                showAlert(
-                    title: "Search Failed",
-                    message: "Something went wrong. Please try again."
-                )
+                guard !Task.isCancelled,
+                      let self else {
+                    return
+                }
+
+                if let apiError = error as? GitHubAPIError {
+                    self.showAlert(
+                        title: "Search Failed",
+                        message: apiError.localizedDescription
+                    )
+                } else {
+                    self.showAlert(
+                        title: "Search Failed",
+                        message: "Something went wrong. Please try again."
+                    )
+                }
             }
         }
     }
@@ -306,7 +339,9 @@ final class SearchViewController: UIViewController,
         shouldReceive touch: UITouch
     ) -> Bool {
 
-        guard let touchedView = touch.view else { return true }
+        guard let touchedView = touch.view else {
+            return true
+        }
 
         if touchedView is UIButton {
             return false

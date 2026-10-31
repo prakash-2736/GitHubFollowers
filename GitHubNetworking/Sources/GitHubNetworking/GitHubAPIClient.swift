@@ -2,6 +2,7 @@
 import Foundation
 
 public enum GitHubAPIError: Error, LocalizedError {
+
     case invalidUsername
     case userNotFound
     case rateLimitExceeded
@@ -28,23 +29,22 @@ public enum GitHubAPIError: Error, LocalizedError {
 }
 
 public struct GitHubAPIClient {
+
     public init() {}
+
     // MARK: - Fetch User
 
     public func fetchUser(username: String) async throws -> GitHubUser {
         let username = try validateUsername(username)
+
         let data = try await getData(
             path: "users/\(username)"
         )
 
-        do {
-            return try JSONDecoder().decode(
-                GitHubUser.self,
-                from: data
-            )
-        } catch {
-            throw GitHubAPIError.invalidResponse
-        }
+        return try await Self.decode(
+            GitHubUser.self,
+            from: data
+        )
     }
 
     // MARK: - Fetch Followers
@@ -69,14 +69,10 @@ public struct GitHubAPIClient {
             ]
         )
 
-        do {
-            return try JSONDecoder().decode(
-                [GitHubUser].self,
-                from: data
-            )
-        } catch {
-            throw GitHubAPIError.invalidResponse
-        }
+        return try await Self.decode(
+            [GitHubUser].self,
+            from: data
+        )
     }
 
     // MARK: - Fetch Repositories
@@ -102,11 +98,22 @@ public struct GitHubAPIClient {
             ]
         )
 
+        return try await Self.decode(
+            [GitHubRepository].self,
+            from: data
+        )
+    }
+
+    // MARK: - Concurrent JSON Decoding
+
+    @concurrent
+    private static func decode<T: Decodable & Sendable>(
+        _ type: T.Type,
+        from data: Data
+    ) async throws -> T {
+
         do {
-            return try JSONDecoder().decode(
-                [GitHubRepository].self,
-                from: data
-            )
+            return try JSONDecoder().decode(type, from: data)
         } catch {
             throw GitHubAPIError.invalidResponse
         }
@@ -124,14 +131,16 @@ public struct GitHubAPIClient {
                 "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
         )
 
-        guard !username.isEmpty,
-              username.count <= 39,
-              username.rangeOfCharacter(
-                  from: allowedCharacters.inverted
-              ) == nil,
-              !username.hasPrefix("-"),
-              !username.hasSuffix("-"),
-              !username.contains("--") else {
+        guard
+            !username.isEmpty,
+            username.count <= 39,
+            username.rangeOfCharacter(
+                from: allowedCharacters.inverted
+            ) == nil,
+            !username.hasPrefix("-"),
+            !username.hasSuffix("-"),
+            !username.contains("--")
+        else {
             throw GitHubAPIError.invalidUsername
         }
 
@@ -189,6 +198,7 @@ public struct GitHubAPIClient {
         }
 
         switch httpResponse.statusCode {
+
         case 200..<300:
             return data
 
@@ -200,6 +210,7 @@ public struct GitHubAPIClient {
                 httpResponse.value(
                     forHTTPHeaderField: "X-RateLimit-Remaining"
                 ) == "0" {
+
                 throw GitHubAPIError.rateLimitExceeded
             }
 
