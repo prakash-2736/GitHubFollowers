@@ -257,6 +257,7 @@ final class FavouritesViewController: UIViewController {
 
         let profileView = UserProfileView(
             username: user.login,
+            user: user,
             onGetFollowers: { [weak navigationController] login in
                 navigationController?.pushViewController(
                     FollowersViewController(username: login),
