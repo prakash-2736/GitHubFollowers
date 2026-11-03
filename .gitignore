@@ -1,0 +1,21 @@
+
+# macOS
+.DS_Store
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+xcuserdata/
+
+# Swift Package Manager
+.build/
+Packages/
+.swiftpm/configuration/registries.json
+
+# Other generated files
+*.ipa
+*.dSYM.zip
+*.dSYM

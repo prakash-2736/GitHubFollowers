@@ -30,7 +30,11 @@ public enum GitHubAPIError: Error, LocalizedError {
 
 public struct GitHubAPIClient {
 
-    public init() {}
+    private let session: URLSession
+
+    public init(session: URLSession = .shared) {
+        self.session = session
+    }
 
     // MARK: - Fetch User
 
@@ -182,7 +186,7 @@ public struct GitHubAPIClient {
         let response: URLResponse
 
         do {
-            (data, response) = try await URLSession.shared.data(
+            (data, response) = try await session.data(
                 for: request
             )
         } catch let error as URLError {
