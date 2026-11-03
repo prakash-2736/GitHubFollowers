@@ -2,48 +2,71 @@
 import Foundation
 import GitHubNetworking
 
+@MainActor
 final class FavouritesManager {
 
     static let shared = FavouritesManager()
 
     private let storageKey = "github_favourites"
 
-    private init() {}
+    private var favourites: [GitHubUser]
+    private var favouriteIDs: Set<Int>
 
-    func getFavourites() -> [GitHubUser] {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let favourites = try? JSONDecoder().decode(
+    private init() {
+        if let data = UserDefaults.standard.data(forKey: storageKey),
+           let savedFavourites = try? JSONDecoder().decode(
                 [GitHubUser].self,
                 from: data
-              ) else {
-            return []
+           ) {
+            favourites = savedFavourites
+            favouriteIDs = Set(savedFavourites.map(\.id))
+        } else {
+            favourites = []
+            favouriteIDs = []
         }
-
-        return favourites
     }
 
-    func addFavourite(_ user: GitHubUser) {
-        var favourites = getFavourites()
+    // MARK: - Get Favourites
 
-        guard !favourites.contains(where: { $0.id == user.id }) else {
+    func getFavourites() -> [GitHubUser] {
+        favourites
+    }
+
+    // MARK: - Add Favourite
+
+    func addFavourite(_ user: GitHubUser) {
+        guard !favouriteIDs.contains(user.id) else {
             return
         }
 
         favourites.append(user)
-        save(favourites)
+        favouriteIDs.insert(user.id)
+
+        save()
     }
+
+    // MARK: - Remove Favourite
 
     func removeFavourite(id: Int) {
-        var favourites = getFavourites()
+        guard favouriteIDs.contains(id) else {
+            return
+        }
+
         favourites.removeAll { $0.id == id }
-        save(favourites)
+        favouriteIDs.remove(id)
+
+        save()
     }
+
+    // MARK: - Check Favourite
 
     func isFavourite(id: Int) -> Bool {
-        getFavourites().contains { $0.id == id }
+        favouriteIDs.contains(id)
     }
 
-    private func save(_ favourites: [GitHubUser]) {
+    // MARK: - Persistence
+
+    private func save() {
         guard let data = try? JSONEncoder().encode(favourites) else {
             return
         }

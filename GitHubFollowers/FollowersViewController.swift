@@ -359,24 +359,14 @@ final class FollowersViewController: UIViewController {
     }
 
     private func showPaginationError() {
-
-        let alert = UIAlertController(
+        showAppAlert(
             title: "Unable to Load More Followers",
             message: errorMessage ?? "Please try again.",
-            preferredStyle: .alert
-        )
-
-        alert.addAction(
-            UIAlertAction(title: "Cancel", style: .cancel)
-        )
-
-        alert.addAction(
-            UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
-                self?.fetchFollowers(isRetry: true)
-            }
-        )
-
-        present(alert, animated: true)
+            buttonTitle: "Cancel",
+            actionTitle: "Retry"
+        ) { [weak self] in
+            self?.fetchFollowers(isRetry: true)
+        }
     }
 
     // MARK: - Filtering

@@ -217,7 +217,7 @@ final class SearchViewController: UIViewController,
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !username.isEmpty else {
 
-            showAlert(
+            showAppAlert(
                 title: "Username Required",
                 message: "Please enter a GitHub username."
             )
@@ -255,39 +255,9 @@ final class SearchViewController: UIViewController,
                     return
                 }
 
-                let profileView = UserProfileView(
-                    username: user.login,
-                    user: user,
-
-                    onGetFollowers: { [weak self] login in
-                        self?.navigationController?.pushViewController(
-                            FollowersViewController(username: login),
-                            animated: true
-                        )
-                    },
-
-                    onGetRepositories: { [weak self] login in
-                        guard let self else {
-                            return
-                        }
-
-                        let repositoryView = RepositoryView(
-                            username: login
-                        )
-
-                        let hostingController = UIHostingController(
-                            rootView: repositoryView
-                        )
-
-                        self.navigationController?.pushViewController(
-                            hostingController,
-                            animated: true
-                        )
-                    }
-                )
-
-                let hostingController = UIHostingController(
-                    rootView: profileView
+                let hostingController = ProfileScreenBuilder.makeHostingController(
+                    for: user,
+                    navigationController: self.navigationController
                 )
 
                 self.navigationController?.pushViewController(
@@ -302,34 +272,18 @@ final class SearchViewController: UIViewController,
                 }
 
                 if let apiError = error as? GitHubAPIError {
-                    self.showAlert(
+                    self.showAppAlert(
                         title: "Search Failed",
                         message: apiError.localizedDescription
                     )
                 } else {
-                    self.showAlert(
+                    self.showAppAlert(
                         title: "Search Failed",
                         message: "Something went wrong. Please try again."
                     )
                 }
             }
         }
-    }
-
-    // MARK: - Alert
-
-    private func showAlert(title: String, message: String) {
-        let alert = UIAlertController(
-            title: title,
-            message: message,
-            preferredStyle: .alert
-        )
-
-        alert.addAction(
-            UIAlertAction(title: "OK", style: .default)
-        )
-
-        present(alert, animated: true)
     }
 
     // MARK: - Gesture Recognizer

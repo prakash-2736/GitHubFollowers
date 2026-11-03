@@ -253,35 +253,9 @@ final class FavouritesViewController: UIViewController {
     // MARK: - Profile Navigation
 
     private func openProfile(for user: GitHubUser) {
-        let navigationController = self.navigationController
-
-        let profileView = UserProfileView(
-            username: user.login,
-            user: user,
-            onGetFollowers: { [weak navigationController] login in
-                navigationController?.pushViewController(
-                    FollowersViewController(username: login),
-                    animated: true
-                )
-            },
-            onGetRepositories: { [weak navigationController] login in
-                let repositoryView = RepositoryView(
-                    username: login
-                )
-
-                let hostingController = UIHostingController(
-                    rootView: repositoryView
-                )
-
-                navigationController?.pushViewController(
-                    hostingController,
-                    animated: true
-                )
-            }
-        )
-
-        let hostingController = UIHostingController(
-            rootView: profileView
+        let hostingController = ProfileScreenBuilder.makeHostingController(
+            for: user,
+            navigationController: navigationController
         )
 
         navigationController?.pushViewController(
